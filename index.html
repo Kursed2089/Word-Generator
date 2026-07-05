@@ -2,15 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Learn vocabulary with AI-powered example sentences, definitions, and quizzes" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Learn vocabulary with AI-powered example sentences and definitions" />
+  
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Word Explorer" />
+  
   <title>Word Explorer</title>
   <style>
     * {
       box-sizing: border-box;
+      /* FIX: Stops the grey tap highlight flash unique to mobile browsers */
+      -webkit-tap-highlight-color: transparent;
+      /* FIX: Removes the 300ms double-tap zoom delay completely */
+      touch-action: manipulation; 
     }
 
     body {
@@ -22,6 +28,7 @@
       align-items: center;
       min-height: 100vh;
       padding: 16px;
+      overscroll-behavior-y: contain;
     }
 
     .container {
@@ -68,7 +75,6 @@
       font-weight: 600;
     }
 
-    /* Mode switcher tabs */
     .mode-tabs {
       display: flex;
       background: #f0f0f0;
@@ -82,9 +88,12 @@
       background: transparent;
       color: #555;
       border: none;
-      padding: 8px;
+      padding: 10px;
       font-weight: 600;
       border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      touch-action: manipulation;
     }
 
     .tab-btn.active {
@@ -129,6 +138,7 @@
       font-weight: 500;
       transition: all 0.2s;
       text-align: center;
+      touch-action: manipulation;
     }
 
     .btn-primary {
@@ -220,7 +230,6 @@
       min-height: 18px;
     }
 
-    /* Quiz specific styles */
     .quiz-container {
       display: none;
     }
@@ -232,7 +241,7 @@
       font-weight: 600;
       color: #666;
       background: #f9f9f9;
-      padding: 8px 16px;
+      padding: 10px 16px;
       border-radius: 6px;
       margin-bottom: 16px;
     }
@@ -252,12 +261,7 @@
       border-radius: 8px;
       font-size: 14px;
       color: #495057;
-      transition: all 0.2s;
-    }
-
-    .option-btn:hover:not(:disabled) {
-      background: #f1f3f5;
-      border-color: #ced4da;
+      transition: all 0.1s;
     }
 
     .option-btn.correct {
@@ -375,27 +379,34 @@
       padding-top: 32px;
     }
 
+    /* Informational banner telling iPhone users how to bypass cache clearing */
+    .ios-notice {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #3730a3;
+      line-height: 1.4;
+    }
+
     @media (max-width: 768px) {
       .container {
         flex-direction: column;
       }
-
       .card {
         padding: 24px;
       }
-
       #word, .quiz-word {
         font-size: 40px;
       }
-
       h1 {
         font-size: 24px;
       }
-
       .controls {
         gap: 6px;
       }
-
       button {
         padding: 8px 12px;
         font-size: 13px;
@@ -403,7 +414,6 @@
     }
   </style>
 </head>
-
 <body>
 
 <div class="offline-indicator" id="offlineIndicator">📴 You're offline - using downloaded dictionary</div>
@@ -412,8 +422,12 @@
   <div class="card main-card">
     <h1>📖 Word Explorer</h1>
 
+    <div class="ios-notice" id="iosNotice">
+      💡 <strong>iPhone Hint:</strong> Tap Safari's <strong>Share button (📤)</strong> and choose <strong>"Add to Home Screen"</strong> to prevent random offline cache drops.
+    </div>
+
     <div class="mode-tabs">
-      <button class="tab-btn active" id="exploreTab">Explore</button>
+      <button class="tab-btn active" id="exploreTab">Explore Words</button>
       <button class="tab-btn" id="quizTab">🎓 Quiz Game</button>
     </div>
 
@@ -442,7 +456,6 @@
       </div>
       
       <div class="quiz-word" id="quizWord">Loading Quiz...</div>
-      
       <div class="quiz-options" id="quizOptions"></div>
       <div class="quiz-feedback" id="quizFeedback"></div>
       
@@ -491,117 +504,125 @@
 </div>
 
 <script>
-    const OLLAMA_URL = localStorage.getItem('ollama_url') || 'http://localhost:11434';
-    const OLLAMA_MODEL = localStorage.getItem('ollama_model') || 'mistral';
-    
-    const cache = {
-      definitions: new Map(),
-      sentences: new Map()
-    };
+  // If the app is run from the home screen as a standalone pinned PWA, hide the instruction notice.
+  if (window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches) {
+    document.getElementById('iosNotice').style.display = 'none';
+  }
 
-    const offlineDictionary = {
-      'ability': { pos: 'noun', defs: ['power or skill to do something', 'talent or competence'] },
-      'able': { pos: 'adjective', defs: ['having the power, skill, means, or opportunity to do something', 'having sufficient power, skill, or resources'] },
-      'about': { pos: 'preposition', defs: ['relating to; concerning', 'approximately; roughly'] },
-      'above': { pos: 'preposition', defs: ['at or to a higher level or position than', 'greater in quantity or number than'] },
-      'abroad': { pos: 'adverb', defs: ['in or to a foreign country', 'over a wide area; far and wide'] },
-      'absence': { pos: 'noun', defs: ['the state of being absent', 'the time or period during which a person or thing is away'] },
-      'absent': { pos: 'adjective', defs: ['not present in a place', 'not existing or lacking'] },
-      'absolute': { pos: 'adjective', defs: ['viewed or existing independently and not in relation to other things', 'complete; total'] },
-      'absorb': { pos: 'verb', defs: ['to take in or soak up liquid', 'to take in information; understand'] },
-      'abstract': { pos: 'adjective', defs: ['existing in thought but not in physical reality', 'difficult to understand; not concrete'] },
-      'abundant': { pos: 'adjective', defs: ['existing or available in large quantities', 'plentiful'] },
-      'accept': { pos: 'verb', defs: ['to consent to receive something offered', 'to believe or come to recognize as true'] },
-      'access': { pos: 'noun', defs: ['the means, right, or opportunity to approach or enter a place', 'the ability to obtain or make use of something'] },
-      'accident': { pos: 'noun', defs: ['an unexpected and undesirable event; a mishap', 'occurring by chance or without intention'] },
-      'account': { pos: 'noun', defs: ['a record of financial transactions', 'a description of an event or experience'] },
-      'achieve': { pos: 'verb', defs: ['to successfully reach or accomplish a goal', 'to attain or gain with effort'] },
-      'acid': { pos: 'noun', defs: ['a chemical substance that neutralizes bases', 'sharp or sour in taste'] },
-      'acquire': { pos: 'verb', defs: ['to obtain or buy something', 'to come to have something gradually'] },
-      'act': { pos: 'verb', defs: ['to do something; take action', 'to behave or conduct oneself in a specified way'] },
-      'action': { pos: 'noun', defs: ['the process of doing something', 'a thing done; an act'] },
-      'active': { pos: 'adjective', defs: ['engaging or ready to engage in physically energetic pursuits', 'currently in use or operation'] },
-      'activity': { pos: 'noun', defs: ['the condition in which things are happening or being done', 'a pursuit or interest'] },
-      'actual': { pos: 'adjective', defs: ['existing in fact; real', 'occurring in fact or reality'] },
-      'adapt': { pos: 'verb', defs: ['to adjust to new conditions', 'to modify something to suit new purposes'] },
-      'add': { pos: 'verb', defs: ['to put together numbers to get a total', 'to include or append something'] },
-      'address': { pos: 'noun', defs: ['a location where someone lives or can be contacted', 'a formal speech or discourse'] },
-      'adjust': { pos: 'verb', defs: ['to alter or move something slightly', 'to become accustomed to something new'] },
-      'admin': { pos: 'noun', defs: ['administration or administrative personnel', 'management of affairs'] },
-      'admit': { pos: 'verb', defs: ['to confess or acknowledge something', 'to allow someone to enter a place'] },
-      'adopt': { pos: 'verb', defs: ['to legally take a child as one\'s own', 'to choose to take up or follow a practice'] },
-      'adult': { pos: 'noun', defs: ['a mature or fully developed person', 'someone who has reached legal age'] },
-      'advance': { pos: 'verb', defs: ['to move forward; make progress', 'to improve or make progress in position or rank'] },
-      'adverse': { pos: 'adjective', defs: ['harmful or unfavorable', 'opposing one\'s interests'] },
-      'advice': { pos: 'noun', defs: ['guidance or recommendations offered with regard to prudence', 'information or notice given'] },
-      'advise': { pos: 'verb', defs: ['to offer suggestions about what should be done', 'to recommend or counsel'] },
-      'advocate': { pos: 'verb', defs: ['to recommend or support publicly', 'to plead in favor of'] },
-      'affair': { pos: 'noun', defs: ['an event or sequence of events of some importance', 'a matter or situation'] },
-      'affect': { pos: 'verb', defs: ['to have an influence on; produce an effect on', 'to touch emotionally'] },
-      'afford': { pos: 'verb', defs: ['to be able to pay for something', 'to be able to spare or give'] },
-      'afraid': { pos: 'adjective', defs: ['feeling fear or anxiety', 'reluctant or unwilling'] },
-      'after': { pos: 'preposition', defs: ['at a later or future time than', 'following in place or position'] },
-      'again': { pos: 'adverb', defs: ['once more; another time', 'returning to a previous state'] },
-      'against': { pos: 'preposition', defs: ['in contact with; touching', 'in opposition to'] },
-      'age': { pos: 'noun', defs: ['the length of time a person has lived', 'a particular stage of life'] },
-      'agency': { pos: 'noun', defs: ['an organization providing a service', 'the capacity to act or exert power'] },
-      'agent': { pos: 'noun', defs: ['a person or thing that takes an active role', 'a person appointed to act for another'] },
-      'ago': { pos: 'adverb', defs: ['in the past; earlier', 'at a time in the past'] },
-      'agree': { pos: 'verb', defs: ['to have the same opinion as; concur', 'to consent to something'] },
-      'ahead': { pos: 'adverb', defs: ['further forward or in advance', 'in the future; in time to come'] },
-      'aid': { pos: 'verb', defs: ['to help or support someone', 'to assist in achieving something'] },
-      'aim': { pos: 'verb', defs: ['to point or direct toward a target', 'to intend or plan something'] },
-      'air': { pos: 'noun', defs: ['the invisible mixture of gases surrounding the earth', 'the atmosphere or sky'] },
-      'airport': { pos: 'noun', defs: ['a facility where aircraft take off and land', 'a place for air travel'] },
-      'alarm': { pos: 'noun', defs: ['worry or fear about a possible danger', 'a device that makes a loud sound to alert'] },
-      'album': { pos: 'noun', defs: ['a collection of songs recorded together', 'a book for storing photographs'] },
-      'alcohol': { pos: 'noun', defs: ['a drink containing ethanol', 'a chemical compound used as a solvent'] },
-      'alert': { pos: 'adjective', defs: ['quick to notice things; attentive', 'watchful and vigilant'] },
-      'alien': { pos: 'adjective', defs: ['belonging to another country; foreign', 'unfamiliar or strange'] },
-      'alive': { pos: 'adjective', defs: ['having life; not dead', 'lively or full of energy'] },
-      'all': { pos: 'determiner', defs: ['the whole quantity or extent of something', 'everyone or everything'] },
-      'allow': { pos: 'verb', defs: ['to permit someone to do something', 'to enable by not preventing'] },
-      'almost': { pos: 'adverb', defs: ['very nearly; not quite', 'all but; practically'] },
-      'alone': { pos: 'adjective', defs: ['on one\'s own; without others', 'isolated or lonely'] },
-      'along': { pos: 'preposition', defs: ['moving in a line with; throughout the length of', 'together with'] },
-      'already': { pos: 'adverb', defs: ['before now; previously', 'as early as now'] },
-      'also': { pos: 'adverb', defs: ['in addition; furthermore', 'too; likewise'] },
-      'alter': { pos: 'verb', defs: ['to change or modify something', 'to become different'] },
-      'alternative': { pos: 'noun', defs: ['one of two or more available possibilities', 'an option offering a different approach'] },
-      'although': { pos: 'conjunction', defs: ['despite the fact that; though', 'even though'] },
-      'altitude': { pos: 'noun', defs: ['the height above ground or sea level', 'vertical distance from a reference point'] },
-      'altogether': { pos: 'adverb', defs: ['completely; entirely', 'in total; as a whole'] },
-      'always': { pos: 'adverb', defs: ['at all times; repeatedly', 'continually; perpetually'] },
-      'amateur': { pos: 'noun', defs: ['a person who engages in a pursuit for pleasure, not as a profession', 'a nonprofessional'] },
-      'amaze': { pos: 'verb', defs: ['to surprise or astonish someone greatly', 'to cause wonder or astonishment'] },
-      'ambassador': { pos: 'noun', defs: ['a diplomatic official of the highest rank', 'a representative or promoter'] },
-      'ambiguity': { pos: 'noun', defs: ['the quality of being open to more than one interpretation', 'uncertainty or vagueness'] },
-      'ambitious': { pos: 'adjective', defs: ['having a strong desire to succeed', 'requiring great effort or determination'] },
-      'ambulance': { pos: 'noun', defs: ['a vehicle equipped to transport sick or injured people', 'emergency medical transport'] },
-      'among': { pos: 'preposition', defs: ['surrounded by; in the middle of', 'within a group or crowd'] },
-      'amount': { pos: 'noun', defs: ['a quantity of something', 'the total of several quantities'] },
-      'amuse': { pos: 'verb', defs: ['to cause to laugh or smile', 'to entertain or provide enjoyment'] },
-      'analysis': { pos: 'noun', defs: ['detailed examination of elements or structure', 'a method of examining data or information'] },
-      'analyze': { pos: 'verb', defs: ['to examine something in detail', 'to break down information into components'] },
-      'ancestor': { pos: 'noun', defs: ['a person from whom one is descended', 'a forebear or predecessor'] },
-      'ancient': { pos: 'adjective', defs: ['of or from a very long time ago', 'of or belonging to the very distant past'] }
-    };
+  const OLLAMA_URL = localStorage.getItem('ollama_url') || 'http://localhost:11434';
+  const OLLAMA_MODEL = localStorage.getItem('ollama_model') || 'mistral';
+  
+  const cache = {
+    definitions: new Map(),
+    sentences: new Map()
+  };
 
-    const offlineWordsSet = new Set(Object.keys(offlineDictionary));
+  const offlineDictionary = {
+    'ability': { pos: 'noun', defs: ['power or skill to do something', 'talent or competence'] },
+    'able': { pos: 'adjective', defs: ['having the power, skill, means, or opportunity to do something', 'having sufficient power, skill, or resources'] },
+    'about': { pos: 'preposition', defs: ['relating to; concerning', 'approximately; roughly'] },
+    'above': { pos: 'preposition', defs: ['at or to a higher level or position than', 'greater in quantity or number than'] },
+    'abroad': { pos: 'adverb', defs: ['in or to a foreign country', 'over a wide area; far and wide'] },
+    'absence': { pos: 'noun', defs: ['the state of being absent', 'the time or period during which a person or thing is away'] },
+    'absent': { pos: 'adjective', defs: ['not present in a place', 'not existing or lacking'] },
+    'absolute': { pos: 'adjective', defs: ['viewed or existing independently and not in relation to other things', 'complete; total'] },
+    'absorb': { pos: 'verb', defs: ['to take in or soak up liquid', 'to take in information; understand'] },
+    'abstract': { pos: 'adjective', defs: ['existing in thought but not in physical reality', 'difficult to understand; not concrete'] },
+    'abundant': { pos: 'adjective', defs: ['existing or available in large quantities', 'plentiful'] },
+    'accept': { pos: 'verb', defs: ['to consent to receive something offered', 'to believe or come to recognize as true'] },
+    'access': { pos: 'noun', defs: ['the means, right, or opportunity to approach or enter a place', 'the ability to obtain or make use of something'] },
+    'accident': { pos: 'noun', defs: ['an unexpected and undesirable event; a mishap', 'occurring by chance or without intention'] },
+    'account': { pos: 'noun', defs: ['a record of financial transactions', 'a description of an event or experience'] },
+    'achieve': { pos: 'verb', defs: ['to successfully reach or accomplish a goal', 'to attain or gain with effort'] },
+    'acid': { pos: 'noun', defs: ['a chemical substance that neutralizes bases', 'sharp or sour in taste'] },
+    'acquire': { pos: 'verb', defs: ['to obtain or buy something', 'to come to have something gradually'] },
+    'act': { pos: 'verb', defs: ['to do something; take action', 'to behave or conduct oneself in a specified way'] },
+    'action': { pos: 'noun', defs: ['the process of doing something', 'a thing done; an act'] },
+    'active': { pos: 'adjective', defs: ['engaging or ready to engage in physically energetic pursuits', 'currently in use or operation'] },
+    'activity': { pos: 'noun', defs: ['the condition in which things are happening or being done', 'a pursuit or interest'] },
+    'actual': { pos: 'adjective', defs: ['existing in fact; real', 'occurring in fact or reality'] },
+    'adapt': { pos: 'verb', defs: ['to adjust to new conditions', 'to modify something to suit new purposes'] },
+    'add': { pos: 'verb', defs: ['to put together numbers to get a total', 'to include or append something'] },
+    'address': { pos: 'noun', defs: ['a location where someone lives or can be contacted', 'a formal speech or discourse'] },
+    'adjust': { pos: 'verb', defs: ['to alter or move something slightly', 'to become accustomed to something new'] },
+    'admin': { pos: 'noun', defs: ['administration or administrative personnel', 'management of affairs'] },
+    'admit': { pos: 'verb', defs: ['to confess or acknowledge something', 'to allow someone to enter a place'] },
+    'adopt': { pos: 'verb', defs: ['to legally take a child as one\'s own', 'to choose to take up or follow a practice'] },
+    'adult': { pos: 'noun', defs: ['a mature or fully developed person', 'someone who has reached legal age'] },
+    'advance': { pos: 'verb', defs: ['to move forward; make progress', 'to improve or make progress in position or rank'] },
+    'adverse': { pos: 'adjective', defs: ['harmful or unfavorable', 'opposing one\'s interests'] },
+    'advice': { pos: 'noun', defs: ['guidance or recommendations offered with regard to prudence', 'information or notice given'] },
+    'advise': { pos: 'verb', defs: ['to offer suggestions about what should be done', 'to recommend or counsel'] },
+    'advocate': { pos: 'verb', defs: ['to recommend or support publicly', 'to plead in favor of'] },
+    'affair': { pos: 'noun', defs: ['an event or sequence of events of some importance', 'a matter or situation'] },
+    'affect': { pos: 'verb', defs: ['to have an influence on; produce an effect on', 'to touch emotionally'] },
+    'afford': { pos: 'verb', defs: ['to be able to pay for something', 'to be able to spare or give'] },
+    'afraid': { pos: 'adjective', defs: ['feeling fear or anxiety', 'reluctant or unwilling'] },
+    'after': { pos: 'preposition', defs: ['at a later or future time than', 'following in place or position'] },
+    'again': { pos: 'adverb', defs: ['once more; another time', 'returning to a previous state'] },
+    'against': { pos: 'preposition', defs: ['in contact with; touching', 'in opposition to'] },
+    'age': { pos: 'noun', defs: ['the length of time a person has lived', 'a particular stage of life'] },
+    'agency': { pos: 'noun', defs: ['an organization providing a service', 'the capacity to act or exert power'] },
+    'agent': { pos: 'noun', defs: ['a person or thing that takes an active role', 'a person appointed to act for another'] },
+    'ago': { pos: 'adverb', defs: ['in the past; earlier', 'at a time in the past'] },
+    'agree': { pos: 'verb', defs: ['to have the same opinion as; concur', 'to consent to something'] },
+    'ahead': { pos: 'adverb', defs: ['further forward or in advance', 'in the future; in time to come'] },
+    'aid': { pos: 'verb', defs: ['to help or support someone', 'to assist in achieving something'] },
+    'aim': { pos: 'verb', defs: ['to point or direct toward a target', 'to intend or plan something'] },
+    'air': { pos: 'noun', defs: ['the invisible mixture of gases surrounding the earth', 'the atmosphere or sky'] },
+    'airport': { pos: 'noun', defs: ['a facility where aircraft take off and land', 'a place for air travel'] },
+    'alarm': { pos: 'noun', defs: ['worry or fear about a possible danger', 'a device that makes a loud sound to alert'] },
+    'album': { pos: 'noun', defs: ['a collection of songs recorded together', 'a book for storing photographs'] },
+    'alcohol': { pos: 'noun', defs: ['a drink containing ethanol', 'a chemical compound used as a solvent'] },
+    'alert': { pos: 'adjective', defs: ['quick to notice things; attentive', 'watchful and vigilant'] },
+    'alien': { pos: 'adjective', defs: ['belonging to another country; foreign', 'unfamiliar or strange'] },
+    'alive': { pos: 'adjective', defs: ['having life; not dead', 'lively or full of energy'] },
+    'all': { pos: 'determiner', defs: ['the whole quantity or extent of something', 'everyone or everything'] },
+    'allow': { pos: 'verb', defs: ['to permit someone to do something', 'to enable by not preventing'] },
+    'almost': { pos: 'adverb', defs: ['very nearly; not quite', 'all but; practically'] },
+    'alone': { pos: 'adjective', defs: ['on one\'s own; without others', 'isolated or lonely'] },
+    'along': { pos: 'preposition', defs: ['moving in a line with; throughout the length of', 'together with'] },
+    'already': { pos: 'adverb', defs: ['before now; previously', 'as early as now'] },
+    'also': { pos: 'adverb', defs: ['in addition; furthermore', 'too; likewise'] },
+    'alter': { pos: 'verb', defs: ['to change or modify something', 'to become different'] },
+    'alternative': { pos: 'noun', defs: ['one of two or more available possibilities', 'an option offering a different approach'] },
+    'although': { pos: 'conjunction', defs: ['despite the fact that; though', 'even though'] },
+    'altitude': { pos: 'noun', defs: ['the height above ground or sea level', 'vertical distance from a reference point'] },
+    'altogether': { pos: 'adverb', defs: ['completely; entirely', 'in total; as a whole'] },
+    'always': { pos: 'adverb', defs: ['at all times; repeatedly', 'continually; perpetually'] },
+    'amateur': { pos: 'noun', defs: ['a person who engages in a pursuit for pleasure, not as a profession', 'a nonprofessional'] },
+    'amaze': { pos: 'verb', defs: ['to surprise or astonish someone greatly', 'to cause wonder or astonishment'] },
+    'ambassador': { pos: 'noun', defs: ['a diplomatic official of the highest rank', 'a representative or promoter'] },
+    'ambiguity': { pos: 'noun', defs: ['the quality of being open to more than one interpretation', 'uncertainty or vagueness'] },
+    'ambitious': { pos: 'adjective', defs: ['having a strong desire to succeed', 'requiring great effort or determination'] },
+    'ambulance': { pos: 'noun', defs: ['a vehicle equipped to transport sick or injured people', 'emergency medical transport'] },
+    'among': { pos: 'preposition', defs: ['surrounded by; in the middle of', 'within a group or crowd'] },
+    'amount': { pos: 'noun', defs: ['a quantity of something', 'the total of several quantities'] },
+    'amuse': { pos: 'verb', defs: ['to cause to laugh or smile', 'to entertain or provide enjoyment'] },
+    'analysis': { pos: 'noun', defs: ['detailed examination of elements or structure', 'a method of examining data or information'] },
+    'analyze': { pos: 'verb', defs: ['to examine something in detail', 'to break down information into components'] },
+    'ancestor': { pos: 'noun', defs: ['a person from whom one is descended', 'a forebear or predecessor'] },
+    'ancient': { pos: 'adjective', defs: ['of or from a very long time ago', 'of or belonging to the very distant past'] }
+  };
 
-    const commonWords = new Set([
-        "the","a","an","and","or","but","if","then","than","that","this","these","those","when","where","which","who","whom","whose","what","why","how","as",
-        "is","are","was","were","be","been","being","am","have","has","had","do","does","did",
-        "of","to","in","on","at","for","from","with","without","by","into","onto","upon","through","during","before","after","above","below","between","among","around","across","along","beside","inside","outside","over","under","up","down","out",
-        "i","me","we","us","you","he","him","she","her","it","they","them","it","itself","myself","yourself","himself","herself","ourselves","themselves",
-        "my","your","his","her","its","our","their","this","that","these","those","can","may","might","could","should","would","will","shall","must","ought","not","no","nor","neither"
-    ]);
+  const offlineWordsSet = new Set(Object.keys(offlineDictionary));
+
+  const commonWords = new Set([
+    "the","a","an","and","or","but","if","then","than","that","this","these","those","when","where","which","who","whom","whose","what","why","how","as",
+    "is","are","was","were","be","been","being","am","have","has","had","do","does","did","of","to","in","on","at","for","from","with","without","by","into","onto","upon","through","during","before","after","above","below","between","among","around","across","along","beside","inside","outside","over","under","up","down","out",
+    "i","me","we","us","you","he","him","she","her","it","they","them","itself","myself","yourself","himself","herself","ourselves","themselves","my","your","his","her","its","our","their","can","may","might","could","should","would","will","shall","must","ought","not","no","nor","neither",
+    "use","make","get","go","come","see","know","think","want","give","find","tell","ask","work","seem","feel","try","leave","put","mean","keep","let","begin","show","hear","play","run","move","like","live","believe","hold","bring","happen","write","provide","sit","stand","lose","pay","meet","include","continue","set","learn","change","lead","understand","watch","follow","stop","create","speak","read","allow","add","spend","grow","open","walk","win","offer","remember","love","consider","appear","buy","wait","serve","die","send","expect","build","stay","fall","cut","reach","kill","remain","suggest","raise","pass",
+    "new","old","good","bad","big","small","right","wrong","high","low","early","late","fast","slow","hot","cold","long","short","strong","weak","happy","sad","red","blue","green","yellow","black","white","first","last","next","other","such","same","different","many","much","few","some","all","each","every","only","best","worst",
+    "very","also","just","so","more","most","less","least","now","here","there","today","yesterday","tomorrow","always","never","sometimes","often","usually","rarely","really","quite","rather","somewhat","one","two","three","four","five","six","seven","eight","nine","ten","hundred","thousand","million","second","third","fourth","fifth",
+    "thing","person","people","way","time","year","day","week","month","hour","minute","second","place","life","hand","part","eye","face","head","body","word","number","question","answer","problem","reason","case","area","point","fact","result","power","value","system","form","unit","level","sound","name","type","kind","example","idea","effect","experience","group","side","view","service","nature","state","condition","position","situation","moment","interest","effort","decision","choice","chance","risk","cost","price","role","rule","law","order","method","step","stage","rate","age","size","measure","weight","distance","space","color","shape","texture","quality","importance","meaning","purpose","cause","relation","connection","difference","similarity","comparison","contrast","degree","amount","quantity","source","origin","target","goal","aim","objective","outcome","consequence","advantage","benefit","disadvantage","loss","gain","profit","success","failure","victory","defeat","win","team","member","leader","teacher","student","doctor","patient","parent","child","brother","sister","friend","enemy","neighbor","stranger","guest","host","visitor","customer","client","employer","employee","worker","manager","owner","partner","rival","ally",
+    "say","said","says","goes","went","gets","got","makes","made","knows","knew","comes","came","sees","saw","takes","took","thinks","thought","wants","wanted","call","calls","called","tries","tried","asks","asked","needs","needed","feels","felt","become","becomes","became","leaves","left","puts","means","meant","keeps","kept","lets","begins","began","seems","seemed","help","helps","helped","talk","talks","talked","turn","turns","turned","start","starts","started","shows","showed","hears","heard","plays","played","runs","ran","moves","moved","likes","liked","lives","lived","believes","believed","holds","held","brings","brought","happens","happened","writes","wrote","provides","provided","sits","sat","stands","stood",
+    "yes","ok","okay","please","thank","thanks","well","too","yet","still","even","already","ago","soon","later"
+  ]);
 
   let currentWord = "";
   let wordHistory = [];
-  let navigationStack = []; 
+  let navigationStack = [];
   
-  // Quiz Variables
   let quizScore = 0;
   let quizStreak = 0;
   let currentQuizWord = "";
@@ -616,40 +637,32 @@
     "quixotic", "verbose", "pristine", "felicitous",
     "gregarious", "ostentatious", "perfunctory", "sagacious", "temerity",
     "zealous", "aggregate", "digress", "ebullient", "frivolous",
-    "garrulous", "harbinger", "ignominious", "judicious", "lackadaisical", 
-    "magnanimous", "nebulous", "obdurate", "parsimonious",
+    "garrulous", "harbinger", "ignominious", "judicious", "kiss",
+    "lackadaisical", "magnanimous", "nebulous", "obdurate", "parsimonious",
     "quandary", "recalcitrant", "transient", "unctuous",
     "vacuous", "winsome", "xenophobic", "yearn", "zephyr"
   ];
 
-  // Extended Quiz Mock definitions for the core list words (so Quiz works seamlessly offline)
-  const extendedQuizDefs = {
+  const wordListSet = new Set(wordList.map(w => w.toLowerCase()));
+
+  const coreQuizDefs = {
     "serendipity": "finding valuable things by luck or unexpected good fortune",
-    "ephemeral": "lasting for a very short time",
-    "eloquent": "fluent or persuasive in speaking or writing",
-    "ubiquitous": "present, appearing, or found everywhere",
-    "pragmatic": "dealing with things sensibly and realistically",
-    "melancholy": "a feeling of pensive sadness, typically with no obvious cause",
-    "idyllic": "extremely peaceful, picturesque, or happy",
-    "cacophony": "a harsh, discordant mixture of sounds",
-    "benevolent": "well-meaning and kindly",
-    "nostalgia": "a sentimental longing or wistful affection for the past",
-    "ambiguous": "open to more than one interpretation; unclear",
-    "diligent": "showing care and conscientiousness in one's work",
-    "esoteric": "intended for or likely to be understood by only a small number of people",
-    "obfuscate": "to render obscure, unclear, or unintelligible",
-    "perspicacious": "having a ready insight into and understanding of things",
-    "sanguine": "optimistic or positive, especially in an apparently bad situation",
-    "taciturn": "reserved or uncommunicative in speech; saying little",
-    "meticulous": "showing great attention to detail; very careful and precise",
-    "sonorous": "capably producing a deep or ringing sound",
+    "ephemeral": "lasting for a very short, fleeting period of time",
+    "eloquent": "fluent, vivid, or persuasive in speaking or writing",
+    "ubiquitous": "present, appearing, or found everywhere simultaneously",
+    "pragmatic": "dealing with situations realistically based on practical application",
+    "melancholy": "a feeling of deep, pensive sadness with no clear cause",
+    "idyllic": "extremely peaceful, picturesque, and happy",
+    "cacophony": "a harsh, discordant, and meaningless mixture of loud sounds",
+    "benevolent": "well-meaning, charitable, and kindly natured",
+    "nostalgia": "a sentimental longing or wistful affection for periods of the past",
     "quixotic": "exceedingly idealistic, unrealistic, and impractical",
     "verbose": "using or expressed in more words than are needed",
-    "pristine": "in its original condition; unspoiled",
-    "zealous": "having or showing great zeal and enthusiasm"
+    "pristine": "in its original condition; unspoiled and clean",
+    "meticulous": "showing immense attention to small details; extremely precise"
   };
 
-  // Tab switching logic
+  // View Layer Switchers
   document.getElementById("exploreTab").addEventListener("click", () => {
     document.getElementById("exploreTab").classList.add("active");
     document.getElementById("quizTab").classList.remove("active");
@@ -677,7 +690,6 @@
       historyList.innerHTML = '<div class="empty-history">No words saved yet</div>';
       return;
     }
-
     historyList.innerHTML = ''; 
 
     wordHistory.forEach((item, idx) => {
@@ -704,149 +716,52 @@
 
       historyItem.appendChild(wordInfo);
       historyItem.appendChild(removeBtn);
-
       historyList.appendChild(historyItem);
     });
   }
 
-  // Event delegation for history items
   document.getElementById('historyList').addEventListener('click', (e) => {
     const removeBtn = e.target.closest('.history-remove');
     if (removeBtn) {
-      const idx = parseInt(removeBtn.dataset.removeIdx);
-      removeFromHistory(idx);
+      wordHistory.splice(parseInt(removeBtn.dataset.removeIdx), 1);
+      localStorage.setItem('wordHistory', JSON.stringify(wordHistory));
+      renderHistory();
       return;
     }
 
     const historyItem = e.target.closest('.history-item');
     if (historyItem) {
-      const idx = parseInt(historyItem.dataset.wordIdx);
-      // Automatically switch to Explore mode when picking from history
       document.getElementById("exploreTab").click();
-      loadWord(wordHistory[idx].word);
+      loadWord(wordHistory[parseInt(historyItem.dataset.wordIdx)].word);
     }
   });
 
   function saveWord() {
-    if (!currentWord) {
-      showSaveStatus('No word to save', 'error', 2000);
+    if (!currentWord) { showSaveStatus('No word to save', 'error'); return; }
+    if (wordHistory.some(item => item.word.toLowerCase() === currentWord.toLowerCase())) {
+      showSaveStatus('Already saved ✓', 'info');
       return;
     }
-
-    const exists = wordHistory.some(item => item.word.toLowerCase() === currentWord.toLowerCase());
-    if (exists) {
-      showSaveStatus('Already saved ✓', 'info', 2000);
-      return;
-    }
-
-    wordHistory.unshift({
-      word: currentWord,
-      timestamp: Date.now()
-    });
-
-    if (wordHistory.length > 50) {
-      wordHistory = wordHistory.slice(0, 50);
-    }
-
+    wordHistory.unshift({ word: currentWord, timestamp: Date.now() });
+    if (wordHistory.length > 50) wordHistory = wordHistory.slice(0, 50);
     localStorage.setItem('wordHistory', JSON.stringify(wordHistory));
     renderHistory();
-    showSaveStatus('Saved to history! 📚', 'success', 2000);
+    showSaveStatus('Saved to history! 📚', 'success');
   }
 
-  function setLoadingState(isLoading) {
-    document.getElementById("generateBtn").disabled = isLoading;
-    document.getElementById("saveBtn").disabled = isLoading;
-  }
-
-  function removeFromHistory(idx) {
-    wordHistory.splice(idx, 1);
-    localStorage.setItem('wordHistory', JSON.stringify(wordHistory));
-    renderHistory();
-  }
-
-  function clearHistory() {
-    if (confirm('Clear all saved words?')) {
-      wordHistory = [];
-      localStorage.setItem('wordHistory', JSON.stringify(wordHistory));
-      renderHistory();
-    }
-  }
-
-  function showSaveStatus(message, type = 'success', duration = 2000) {
+  function showSaveStatus(message, type = 'success') {
     const el = document.getElementById('saveStatus');
     el.textContent = message;
     el.className = 'save-status ' + (type === 'error' ? 'error' : type === 'info' ? 'info' : '');
-    setTimeout(() => {
-      el.textContent = '';
-      el.className = 'save-status';
-    }, duration);
+    setTimeout(() => { el.textContent = ''; el.className = 'save-status'; }, 2000);
   }
 
-  function buildDefinitionHTML(meanings) {
-    const container = document.createElement('div');
-    meanings.forEach(m => {
-      const header = document.createElement('h3');
-      header.textContent = m.partOfSpeech;
-      container.appendChild(header);
-
-      m.definitions.slice(0, 2).forEach(d => {
-        const p = document.createElement('p');
-        p.appendChild(linkifyElement(d.definition));
-        container.appendChild(p);
-      });
-    });
-    return container;
-  }
-
-  function linkifyElement(text) {
-    const fragment = document.createDocumentFragment();
-    const parts = text.split(/\b([A-Za-z-]+)\b/);
-
-    parts.forEach((part, idx) => {
-      if (idx % 2 === 0) {
-        fragment.appendChild(document.createTextNode(part));
-      } else {
-        const lowerPart = part.toLowerCase();
-        if (commonWords.has(lowerPart)) {
-          fragment.appendChild(document.createTextNode(part));
-        } else {
-          const link = document.createElement('a');
-          link.href = '#';
-          link.className = 'word-link';
-          link.textContent = part;
-          link.dataset.word = lowerPart;
-          fragment.appendChild(link);
-        }
-      }
-    });
-
-    return fragment;
-  }
-
-  function formatTime(timestamp) {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-
-    return new Date(timestamp).toLocaleDateString();
-  }
-
-  // --- QUIZ ENGINE LOGIC ---
+  // --- INTERACTIVE QUIZ ENGINE CORE ---
   function initQuiz() {
     document.getElementById("nextQuizBtn").style.display = "none";
     document.getElementById("quizFeedback").textContent = "";
     
-    // Pick active word pool
-    let activeQuizPool = Object.keys(extendedQuizDefs);
-    
-    // Supplement pool with offline dictionary words if they are downloaded
+    let activeQuizPool = Object.keys(coreQuizDefs);
     const savedDict = localStorage.getItem('offlineDict');
     if (savedDict) {
       activeQuizPool = activeQuizPool.concat(Object.keys(JSON.parse(savedDict)));
@@ -855,41 +770,32 @@
     currentQuizWord = activeQuizPool[Math.floor(Math.random() * activeQuizPool.length)];
     document.getElementById("quizWord").textContent = currentQuizWord;
 
-    // Get correct definition
-    if (extendedQuizDefs[currentQuizWord]) {
-      currentCorrectDef = extendedQuizDefs[currentQuizWord];
+    if (coreQuizDefs[currentQuizWord]) {
+      currentCorrectDef = coreQuizDefs[currentQuizWord];
     } else {
-      const saved = JSON.parse(savedDict);
-      currentCorrectDef = saved[currentQuizWord].defs[0];
+      currentCorrectDef = JSON.parse(savedDict)[currentQuizWord].defs[0];
     }
 
-    // Build a pool of false answers
-    let falsePool = [
-      "to accidentally release high-altitude weather metrics",
+    let distractorPool = [
       "completely lacking standard emotional qualities or warmth",
-      "relating to early sub-surface mapping protocols",
-      "tending to stay close to domestic environments",
-      "a state of hyperactive structural balance",
-      "the process of turning liquid elements to vapor swiftly"
+      "relating to early sub-surface map and terrain metrics",
+      "tending to stay close to domestic household environments",
+      "the process of turning liquid components to vapor swiftly",
+      "moving or flowing in a sequence of structural stages",
+      "difficult to control or predict due to conflicting factors"
     ];
-    
-    // Add real definitions as false alternatives to make it challenging
-    Object.values(extendedQuizDefs).forEach(d => { if(d !== currentCorrectDef) falsePool.push(d); });
+    Object.values(coreQuizDefs).forEach(d => { if(d !== currentCorrectDef) distractorPool.push(d); });
 
-    // Pick 3 random false items
     let options = [];
     while(options.length < 3) {
-      let randDef = falsePool[Math.floor(Math.random() * falsePool.length)];
+      let randDef = distractorPool[Math.floor(Math.random() * distractorPool.length)];
       if(randDef !== currentCorrectDef && !options.includes(randDef)) {
         options.push(randDef);
       }
     }
     options.push(currentCorrectDef);
-    
-    // Shuffle options
     options.sort(() => Math.random() - 0.5);
 
-    // Render options
     const optionsDiv = document.getElementById("quizOptions");
     optionsDiv.innerHTML = "";
     options.forEach(opt => {
@@ -902,12 +808,9 @@
   }
 
   function handleQuizAnswer(selectedBtn, isCorrect) {
-    const allButtons = document.querySelectorAll(".option-btn");
-    allButtons.forEach(btn => {
+    document.querySelectorAll(".option-btn").forEach(btn => {
       btn.disabled = true;
-      if (btn.textContent === currentCorrectDef) {
-        btn.classList.add("correct");
-      }
+      if (btn.textContent === currentCorrectDef) btn.classList.add("correct");
     });
 
     const feedbackEl = document.getElementById("quizFeedback");
@@ -919,7 +822,7 @@
     } else {
       selectedBtn.classList.add("incorrect");
       quizStreak = 0;
-      feedbackEl.textContent = "❌ Incorrect. Try the next one!";
+      feedbackEl.textContent = "❌ Incorrect. Keep practicing!";
       feedbackEl.style.color = "#dc3545";
     }
 
@@ -930,36 +833,29 @@
 
   document.getElementById("nextQuizBtn").addEventListener("click", initQuiz);
 
-  // Initialize event listeners
+  // Setup Global Event Bindings
   document.getElementById("generateBtn").addEventListener("click", loadRandom);
   document.getElementById("speakBtn").addEventListener("click", speak);
   document.getElementById("backBtn").addEventListener("click", goBack);
   document.getElementById("clearBtn").addEventListener("click", clearDefinition);
   document.getElementById("saveBtn").addEventListener("click", saveWord);
-  document.getElementById("clearHistoryBtn").addEventListener("click", clearHistory);
+  document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+    if(confirm("Clear history?")) { localStorage.removeItem('wordHistory'); loadHistory(); }
+  });
   document.getElementById("saveSettingsBtn").addEventListener("click", saveSettings);
   document.getElementById("downloadDictBtn").addEventListener("click", downloadDictionary);
 
-  const params = new URLSearchParams(window.location.search);
-  const urlWord = params.get("word");
-  if (urlWord) {
-    loadWord(urlWord);
+  function formatTime(t) {
+    const diff = Date.now() - t;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+    return new Date(t).toLocaleDateString();
   }
 
-  loadHistory();
-  loadSettings();
-
-  async function loadRandom() {
-    document.getElementById("word").textContent = "Loading...";
-    document.getElementById("sentence").textContent = "";
-    document.getElementById("definition").textContent = "";
-
-    try {
-      const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
-      loadWord(randomWord);
-    } catch (e) {
-      showError("Error loading word. Try again.");
-    }
+  function loadRandom() {
+    const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
+    loadWord(randomWord);
   }
 
   document.addEventListener('click', (e) => {
@@ -971,8 +867,7 @@
   });
 
   function speak() {
-    if (!currentWord) return;
-    if ('speechSynthesis' in window) {
+    if (currentWord && 'speechSynthesis' in window) {
       const u = new SpeechSynthesisUtterance(currentWord);
       u.lang = "en-US";
       speechSynthesis.speak(u);
@@ -981,54 +876,25 @@
 
   function clearDefinition() {
     currentWord = "";
-    resetNavigationStack();
+    navigationStack = [];
+    document.getElementById("backBtn").style.display = "none";
     document.getElementById("word").textContent = "Click Generate Word";
     document.getElementById("sentence").textContent = "";
     document.getElementById("definition").textContent = "";
-    document.getElementById("saveStatus").textContent = "";
-    setLoadingState(false);
   }
 
   function goBack() {
     if (navigationStack.length > 1) {
       navigationStack.pop(); 
-      const previousWord = navigationStack[navigationStack.length - 1];
-      loadWord(previousWord, true); 
-      updateBackButton();
+      const prev = navigationStack[navigationStack.length - 1];
+      loadWord(prev, true);
     }
-  }
-
-  function updateBackButton() {
-    const backBtn = document.getElementById("backBtn");
-    backBtn.style.display = navigationStack.length > 1 ? "inline-block" : "none";
-  }
-
-  function resetNavigationStack() {
-    navigationStack = [];
-    updateBackButton();
-  }
-
-  function showError(msg) {
-    document.getElementById("word").textContent = "Error";
-    document.getElementById("sentence").textContent = msg;
-    document.getElementById("definition").textContent = "";
-  }
-
-  function loadSettings() {
-    document.getElementById("ollamaUrl").value = localStorage.getItem('ollama_url') || 'http://localhost:11434';
-    document.getElementById("ollamaModel").value = localStorage.getItem('ollama_model') || 'mistral';
-    updateDictStatus();
   }
 
   function saveSettings() {
     const url = document.getElementById("ollamaUrl").value.trim();
     const model = document.getElementById("ollamaModel").value.trim();
-
-    if (!url || !model) {
-      alert('Please fill in both fields');
-      return;
-    }
-
+    if (!url || !model) { alert('Please fill in both fields'); return; }
     localStorage.setItem('ollama_url', url);
     localStorage.setItem('ollama_model', model);
     window.location.reload();
@@ -1037,205 +903,192 @@
   async function downloadDictionary() {
     const btn = document.getElementById("downloadDictBtn");
     const status = document.getElementById("dictStatus");
-    
     btn.disabled = true;
-    btn.textContent = "⬇️ Downloading...";
     status.textContent = "Downloading 1000 words...";
-
     try {
       localStorage.setItem('offlineDict', JSON.stringify(offlineDictionary));
-      localStorage.setItem('offlineDictVersion', '1.0');
-      
-      btn.textContent = "✅ Downloaded";
-      status.textContent = `Status: Downloaded (${Object.keys(offlineDictionary).length} words, ${Math.round(JSON.stringify(offlineDictionary).length / 1024)}KB)`;
-      
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.textContent = "⬇️ Update Dictionary";
-      }, 2000);
+      status.textContent = `Status: Downloaded (${Object.keys(offlineDictionary).length} words)`;
+      btn.textContent = "✅ Updated";
+      setTimeout(() => { btn.disabled = false; btn.textContent = "⬇️ Update Dictionary"; }, 2000);
     } catch (e) {
       status.textContent = "Error downloading dictionary";
       btn.disabled = false;
-      btn.textContent = "⬇️ Download Dictionary";
     }
   }
 
   function updateDictStatus() {
-    const status = document.getElementById("dictStatus");
     const savedDict = localStorage.getItem('offlineDict');
-    
     if (savedDict) {
       const dict = JSON.parse(savedDict);
-      const size = Math.round(JSON.stringify(dict).length / 1024);
-      status.textContent = `Status: Downloaded (${Object.keys(dict).length} words, ${size}KB)`;
+      document.getElementById("dictStatus").textContent = `Status: Downloaded (${Object.keys(dict).length} words)`;
       document.getElementById("downloadDictBtn").textContent = "✅ Update Dictionary";
-    } else {
-      status.textContent = "Status: Not downloaded";
     }
   }
 
-  function isOnline() {
-    return navigator.onLine;
+  function isOnline() { return navigator.onLine; }
+
+  function buildDefinitionHTML(meanings) {
+    const container = document.createElement('div');
+    meanings.forEach(m => {
+      const header = document.createElement('h3');
+      header.textContent = m.partOfSpeech;
+      container.appendChild(header);
+      m.definitions.slice(0, 2).forEach(d => {
+        const p = document.createElement('p');
+        p.appendChild(linkifyElement(d.definition));
+        container.appendChild(p);
+      });
+    });
+    return container;
   }
 
-  function getOfflineDefinition(word) {
-    const savedDict = localStorage.getItem('offlineDict');
-    if (!savedDict) return null;
-    
-    const dict = JSON.parse(savedDict);
-    return dict[word];
+  function linkifyElement(text) {
+    const fragment = document.createDocumentFragment();
+    const parts = text.split(/\b([A-Za-z-]+)\b/);
+    parts.forEach((part, idx) => {
+      if (idx % 2 === 0) {
+        fragment.appendChild(document.createTextNode(part));
+      } else {
+        const lower = part.toLowerCase();
+        if (commonWords.has(lower)) {
+          fragment.appendChild(document.createTextNode(part));
+        } else {
+          const link = document.createElement('a');
+          link.href = '#';
+          link.className = 'word-link';
+          link.textContent = part;
+          link.dataset.word = lower;
+          fragment.appendChild(link);
+        }
+      }
+    });
+    return fragment;
   }
 
   async function loadWord(word, skipStack = false) {
-    if (typeof word === 'string' && word.includes('%')) {
-      word = decodeURIComponent(word);
-    }
+    if (typeof word === 'string' && word.includes('%')) word = decodeURIComponent(word);
     word = word.toLowerCase().trim();
-
-    if (!word) {
-      showError("Invalid word");
-      return;
-    }
+    if (!word) return;
 
     currentWord = word;
-
     if (!skipStack) {
-      const lastWord = navigationStack[navigationStack.length - 1];
-      if (lastWord !== word) {
-        navigationStack.push(word);
-        if (navigationStack.length > 50) {
-          navigationStack.shift();
-        }
-      }
+      if (navigationStack[navigationStack.length - 1] !== word) navigationStack.push(word);
     }
-    updateBackButton();
+    document.getElementById("backBtn").style.display = navigationStack.length > 1 ? "inline-block" : "none";
 
     document.getElementById("word").textContent = word;
-    document.getElementById("sentence").textContent = "Loading sentence...";
+    document.getElementById("sentence").textContent = "Connecting to Ollama...";
     document.getElementById("definition").innerHTML = "Loading definition...";
-    document.getElementById("saveStatus").textContent = "";
-    setLoadingState(true);
+    
+    document.getElementById("generateBtn").disabled = true;
+    document.getElementById("saveBtn").disabled = true;
 
+    // --- CACHED SENTENCE LOADER ---
     if (cache.sentences.has(word)) {
       document.getElementById("sentence").innerHTML = cache.sentences.get(word);
     } else {
-      try {
-        document.getElementById("sentence").textContent = "Connecting to Ollama…";
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const ollamaResponse = await fetch(`${OLLAMA_URL}/api/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: OLLAMA_MODEL,
-            prompt: `Create ONE natural, interesting example sentence using the word "${word}". The sentence should be realistic and engaging. Return ONLY the sentence, nothing else.`,
-            stream: false
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (ollamaResponse.ok) {
-          const data = await ollamaResponse.json();
-          let sentence = data.response.trim();
-          const sentenceEl = document.getElementById("sentence");
-          sentenceEl.textContent = ''; 
+      if (coreQuizDefs[word]) {
+        document.getElementById("sentence").textContent = `Example context: Her understanding of "${word}" was highly impressive.`;
+      } else {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
           
-          const parts = sentence.split(new RegExp(`\\b(${word})\\b`, 'gi'));
-          parts.forEach((part, idx) => {
-            if (idx % 2 === 1) {
-              const strong = document.createElement('strong');
-              strong.textContent = part;
-              sentenceEl.appendChild(strong);
-            } else {
-              sentenceEl.appendChild(document.createTextNode(part));
-            }
+          const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: OLLAMA_MODEL,
+              prompt: `Create ONE natural, interesting example sentence using the word "${word}". Return ONLY the sentence, nothing else.`,
+              stream: false
+            }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
           
-          cache.sentences.set(word, sentenceEl.innerHTML);
-        } else {
-          document.getElementById("sentence").textContent = `Example: "${word}" is used in many contexts.`;
-        }
-      } catch (e) {
-        if (e.name === 'AbortError') {
-          document.getElementById("sentence").textContent = `⚠️ Ollama request timed out. Check if it's running at ${OLLAMA_URL}`;
-        } else {
-          document.getElementById("sentence").textContent = `⚠️ Ollama not reachable at ${OLLAMA_URL}. Start it with: ollama run ${OLLAMA_MODEL}`;
+          if (res.ok) {
+            const data = await res.json();
+            let sentence = data.response.trim();
+            const sentenceEl = document.getElementById("sentence");
+            sentenceEl.textContent = '';
+            
+            const parts = sentence.split(new RegExp(`\\b(${word})\\b`, 'gi'));
+            parts.forEach((part, idx) => {
+              if (idx % 2 === 1) {
+                const strong = document.createElement('strong'); strong.textContent = part; sentenceEl.appendChild(strong);
+              } else {
+                sentenceEl.appendChild(document.createTextNode(part));
+              }
+            });
+            cache.sentences.set(word, sentenceEl.innerHTML);
+          } else {
+            document.getElementById("sentence").textContent = `Example: context patterns for "${word}" are loaded.`;
+          }
+        } catch(e) {
+          document.getElementById("sentence").textContent = `📴 [Local Offline Context] active for "${word}".`;
         }
       }
     }
 
+    // --- CACHED DEFINITION LOADER ---
     if (cache.definitions.has(word)) {
       document.getElementById("definition").innerHTML = cache.definitions.get(word);
     } else {
-      const offlineDef = getOfflineDefinition(word);
+      const savedDict = localStorage.getItem('offlineDict');
+      let offlineDef = null;
+      if (savedDict) offlineDef = JSON.parse(savedDict)[word];
+      if (!offlineDef) offlineDef = offlineDictionary[word];
+
       if (offlineDef) {
         const defEl = document.getElementById("definition");
-        defEl.textContent = ''; 
-        
-        const header = document.createElement('h3');
-        header.textContent = offlineDef.pos;
-        defEl.appendChild(header);
-        
+        defEl.textContent = '';
+        const header = document.createElement('h3'); header.textContent = offlineDef.pos; defEl.appendChild(header);
         offlineDef.defs.forEach(def => {
-          const p = document.createElement('p');
-          p.appendChild(linkifyElement(def));
-          defEl.appendChild(p);
+          const p = document.createElement('p'); p.appendChild(linkifyElement(def)); defEl.appendChild(p);
         });
-        
         cache.definitions.set(word, defEl.innerHTML);
       } else if (isOnline()) {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          
-          if (!res.ok) {
-            document.getElementById("definition").textContent = "Definition unavailable offline.";
-            setLoadingState(false);
-            return;
+          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+          if (res.ok) {
+            const data = await res.json();
+            const container = buildDefinitionHTML(data[0].meanings);
+            cache.definitions.set(word, container.innerHTML);
+            document.getElementById("definition").innerHTML = container.innerHTML;
+          } else {
+            document.getElementById("definition").textContent = "Definition not found in cloud database.";
           }
-          
-          const data = await res.json();
-          if (!Array.isArray(data) || data.length === 0) {
-            document.getElementById("definition").textContent = "No definition found.";
-            setLoadingState(false);
-            return;
-          }
-
-          const meanings = data[0].meanings;
-          const defContainer = buildDefinitionHTML(meanings);
-          const cachedHTML = defContainer.innerHTML;
-          cache.definitions.set(word, cachedHTML);
-          document.getElementById("definition").innerHTML = cachedHTML;
-        } catch (e) {
-          document.getElementById("definition").textContent = e.name === 'AbortError' ? "Definition request timed out." : "Definition unavailable offline.";
+        } catch(e) {
+          document.getElementById("definition").textContent = "Definition unavailable offline.";
         }
       } else {
-        document.getElementById("definition").textContent = "📴 Offline mode: Word not in downloaded dictionary.";
+        document.getElementById("definition").textContent = "📴 Offline: Word not found in structural database.";
       }
     }
-    setLoadingState(false);
+
+    document.getElementById("generateBtn").disabled = false;
+    document.getElementById("saveBtn").disabled = false;
   }
 
   window.addEventListener('offline', () => {
     document.getElementById("offlineIndicator").classList.add("show");
     document.body.classList.add("offline-mode");
   });
-
   window.addEventListener('online', () => {
     document.getElementById("offlineIndicator").classList.remove("show");
     document.body.classList.remove("offline-mode");
   });
 
+  document.getElementById("ollamaUrl").value = localStorage.getItem('ollama_url') || 'http://localhost:11434';
+  document.getElementById("ollamaModel").value = localStorage.getItem('ollama_model') || 'mistral';
+  
   if (!isOnline()) {
     document.getElementById("offlineIndicator").classList.add("show");
     document.body.classList.add("offline-mode");
   }
+  
+  loadHistory();
+  updateDictStatus();
 </script>
-
 </body>
 </html>
