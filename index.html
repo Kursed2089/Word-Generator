@@ -13,9 +13,7 @@
   <style>
     * {
       box-sizing: border-box;
-      /* FIX: Stops the grey tap highlight flash unique to mobile browsers */
       -webkit-tap-highlight-color: transparent;
-      /* FIX: Removes the 300ms double-tap zoom delay completely */
       touch-action: manipulation; 
     }
 
@@ -504,7 +502,13 @@
 </div>
 
 <script>
-  // If the app is run from the home screen as a standalone pinned PWA, hide the instruction notice.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Offline service manager active.', reg.scope))
+      .catch(err => console.error('Offline worker registration failed.', err));
+  });
+}
   if (window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches) {
     document.getElementById('iosNotice').style.display = 'none';
   }
