@@ -3,13 +3,13 @@
   "name": "Word Explorer AI Vocabulary",
   "icons": [
     {
-      "src": "https://kursed2089.github.io/WORDLE/icon1.png",
+      "src": "icon1.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any"
     },
     {
-      "src": "https://kursed2089.github.io/WORDLE/icon1.png",
+      "src": "icon1.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
