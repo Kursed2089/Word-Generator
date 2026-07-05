@@ -3,13 +3,13 @@
   "name": "Word Explorer AI Vocabulary",
   "icons": [
     {
-      "src": "icon1.png",
+      "src": "https://word-generator-sigma.vercel.app/icon1.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any"
     },
     {
-      "src": "icon1.png",
+      "src": "https://word-generator-sigma.vercel.app/icon1.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
