@@ -3,18 +3,18 @@
   "name": "Word Explorer AI Vocabulary",
   "icons": [
     {
-      "src": "icon1.png",
+      "src": "https://kursed2089.github.io/WORDLE/icon1.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any"
     },
     {
-      "src": "icon1.png",
+      "src": "https://kursed2089.github.io/WORDLE/icon1.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
-  ],
+  ]
   "start_url": "./index.html",
   "background_color": "#764ba2",
   "theme_color": "#667eea",
