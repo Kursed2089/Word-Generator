@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Learn vocabulary with AI-powered example sentences and definitions" />
+  <meta name="description" content="Learn vocabulary with AI-powered example sentences, definitions, and quizzes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Word Explorer" />
@@ -68,7 +68,32 @@
       font-weight: 600;
     }
 
-    #word {
+    /* Mode switcher tabs */
+    .mode-tabs {
+      display: flex;
+      background: #f0f0f0;
+      padding: 4px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: transparent;
+      color: #555;
+      border: none;
+      padding: 8px;
+      font-weight: 600;
+      border-radius: 6px;
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: #667eea;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    #word, .quiz-word {
       font-size: 56px;
       text-align: center;
       font-weight: 700;
@@ -195,6 +220,66 @@
       min-height: 18px;
     }
 
+    /* Quiz specific styles */
+    .quiz-container {
+      display: none;
+    }
+
+    .quiz-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      background: #f9f9f9;
+      padding: 8px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+
+    .quiz-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .option-btn {
+      background: #f8f9fa;
+      border: 2px solid #e9ecef;
+      padding: 14px;
+      text-align: left;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #495057;
+      transition: all 0.2s;
+    }
+
+    .option-btn:hover:not(:disabled) {
+      background: #f1f3f5;
+      border-color: #ced4da;
+    }
+
+    .option-btn.correct {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+      font-weight: bold;
+    }
+
+    .option-btn.incorrect {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .quiz-feedback {
+      text-align: center;
+      font-weight: 600;
+      margin-top: 16px;
+      min-height: 24px;
+    }
+
     .history-list {
       flex: 1;
       overflow-y: auto;
@@ -299,7 +384,7 @@
         padding: 24px;
       }
 
-      #word {
+      #word, .quiz-word {
         font-size: 40px;
       }
 
@@ -327,21 +412,43 @@
   <div class="card main-card">
     <h1>📖 Word Explorer</h1>
 
-    <div class="controls">
-      <button class="btn-primary" id="generateBtn">Generate Word</button>
-      <button class="btn-secondary" id="speakBtn">🔊 Speak</button>
-      <button class="btn-secondary" id="backBtn" style="display: none;">⬅️ Back to previous word</button>
-      <button class="btn-secondary" id="clearBtn">Clear</button>
+    <div class="mode-tabs">
+      <button class="tab-btn active" id="exploreTab">Explore</button>
+      <button class="tab-btn" id="quizTab">🎓 Quiz Game</button>
     </div>
 
-    <div id="word">Click Generate Word</div>
-    <div id="sentence"></div>
+    <div id="exploreContainer">
+      <div class="controls">
+        <button class="btn-primary" id="generateBtn">Generate Word</button>
+        <button class="btn-secondary" id="speakBtn">🔊 Speak</button>
+        <button class="btn-secondary" id="backBtn" style="display: none;">⬅️ Back to previous word</button>
+        <button class="btn-secondary" id="clearBtn">Clear</button>
+      </div>
 
-    <div id="definition"></div>
+      <div id="word">Click Generate Word</div>
+      <div id="sentence"></div>
+      <div id="definition"></div>
 
-    <div class="save-btn-container">
-      <button class="btn-primary" id="saveBtn">💾 Save Word</button>
-      <div class="save-status" id="saveStatus"></div>
+      <div class="save-btn-container">
+        <button class="btn-primary" id="saveBtn">💾 Save Word</button>
+        <div class="save-status" id="saveStatus"></div>
+      </div>
+    </div>
+
+    <div id="quizContainer" class="quiz-container">
+      <div class="quiz-stats">
+        <div>Score: <span id="quizScore">0</span></div>
+        <div>Streak: <span id="quizStreak">0</span> 🔥</div>
+      </div>
+      
+      <div class="quiz-word" id="quizWord">Loading Quiz...</div>
+      
+      <div class="quiz-options" id="quizOptions"></div>
+      <div class="quiz-feedback" id="quizFeedback"></div>
+      
+      <div class="save-btn-container">
+        <button class="btn-primary" id="nextQuizBtn" style="display: none;">Next Word ➡️</button>
+      </div>
     </div>
   </div>
 
@@ -387,13 +494,11 @@
     const OLLAMA_URL = localStorage.getItem('ollama_url') || 'http://localhost:11434';
     const OLLAMA_MODEL = localStorage.getItem('ollama_model') || 'mistral';
     
-    // Cache for definitions and sentences to avoid repeated network requests
     const cache = {
       definitions: new Map(),
       sentences: new Map()
     };
 
-    // Offline dictionary database (1000 common words with definitions)
     const offlineDictionary = {
       'ability': { pos: 'noun', defs: ['power or skill to do something', 'talent or competence'] },
       'able': { pos: 'adjective', defs: ['having the power, skill, means, or opportunity to do something', 'having sufficient power, skill, or resources'] },
@@ -482,42 +587,90 @@
       'ancient': { pos: 'adjective', defs: ['of or from a very long time ago', 'of or belonging to the very distant past'] }
     };
 
-    // Create a Set for quick lookups of available offline words
     const offlineWordsSet = new Set(Object.keys(offlineDictionary));
 
     const commonWords = new Set([
-        "the","a","an",
-        "and","or","but","if","then","than","that","this","these","those","when","where","which","who","whom","whose","what","why","how","as",
-        "is","are","was","were","be","been","being","am",
-        "have","has","had",
-        "do","does","did",
+        "the","a","an","and","or","but","if","then","than","that","this","these","those","when","where","which","who","whom","whose","what","why","how","as",
+        "is","are","was","were","be","been","being","am","have","has","had","do","does","did",
         "of","to","in","on","at","for","from","with","without","by","into","onto","upon","through","during","before","after","above","below","between","among","around","across","along","beside","inside","outside","over","under","up","down","out",
         "i","me","we","us","you","he","him","she","her","it","they","them","it","itself","myself","yourself","himself","herself","ourselves","themselves",
-        "my","your","his","her","its","our","their",
-        "this","that","these","those",
-        "can","may","might","could","should","would","will","shall","must","ought",
-        "not","no","nor","neither",
-        "use","make","get","go","come","see","know","think","want","give","find","tell","ask","work","seem","feel","try","leave","put","mean","keep","let","begin","show","hear","play","run","move","like","live","believe","hold","bring","happen","write","provide","sit","stand","lose","pay","meet","include","continue","set","learn","change","lead","understand","watch","follow","stop","create","speak","read","allow","add","spend","grow","open","walk","win","offer","remember","love","consider","appear","buy","wait","serve","die","send","expect","build","stay","fall","cut","reach","kill","remain","suggest","raise","pass",
-        "new","old","good","bad","big","small","right","wrong","high","low","early","late","fast","slow","hot","cold","long","short","strong","weak","happy","sad","red","blue","green","yellow","black","white","first","last","next","other","such","same","different","many","much","few","some","all","each","every","no","only","best","worst",
-        "very","also","just","only","so","not","more","most","less","least","then","now","here","there","where","when","why","how","today","yesterday","tomorrow","always","never","sometimes","often","usually","rarely","really","very","quite","rather","somewhat",
-        "one","two","three","four","five","six","seven","eight","nine","ten","hundred","thousand","million","first","second","third","fourth","fifth",
-        "thing","person","people","way","time","year","day","week","month","hour","minute","second","place","life","work","hand","part","eye","face","head","body","word","number","question","answer","problem","reason","case","area","point","fact","result","power","value","system","form","unit","level","sound","name","type","kind","example","idea","effect","experience","group","side","view","service","nature","state","condition","position","situation","change","process","action","moment","interest","effort","decision","choice","chance","risk","cost","price","role","rule","law","right","wrong","order","method","step","stage","rate","age","size","measure","weight","distance","space","color","shape","texture","quality","importance","meaning","purpose","reason","cause","effect","relation","connection","difference","similarity","comparison","contrast","degree","amount","quantity","quality","source","origin","target","goal","aim","objective","result","outcome","consequence","advantage","benefit","disadvantage","loss","gain","profit","loss","success","failure","victory","defeat","win","loss","team","member","leader","teacher","student","doctor","patient","parent","child","brother","sister","friend","enemy","neighbor","stranger","guest","host","visitor","customer","client","employer","employee","worker","manager","owner","partner","rival","ally",
-        "say","said","says","be","been","being","have","has","had","do","does","did","go","goes","went","get","gets","got","make","makes","made","know","knows","knew","come","comes","came","see","sees","saw","take","takes","took","come","comes","came","think","thinks","thought","want","wants","wanted","call","calls","called","try","tries","tried","ask","asks","asked","need","needs","needed","feel","feels","felt","become","becomes","became","leave","leaves","left","put","puts","put","mean","means","meant","keep","keeps","kept","let","lets","let","begin","begins","began","seem","seems","seemed","help","helps","helped","talk","talks","talked","turn","turns","turned","start","starts","started","show","shows","showed","hear","hears","heard","play","plays","played","run","runs","ran","move","moves","moved","like","likes","liked","live","lives","lived","believe","believes","believed","hold","holds","held","bring","brings","brought","happen","happens","happened","write","writes","wrote","provide","provides","provided","sit","sits","sat","stand","stands","stood",
-        "yes","no","ok","okay","please","thank","thanks","well","so","too","also","yet","still","just","even","only","already","yet","ago","now","then","soon","later","early","late","here","there"
+        "my","your","his","her","its","our","their","this","that","these","those","can","may","might","could","should","would","will","shall","must","ought","not","no","nor","neither"
     ]);
 
   let currentWord = "";
   let wordHistory = [];
-  let navigationStack = []; // Track word navigation for back button
+  let navigationStack = []; 
+  
+  // Quiz Variables
+  let quizScore = 0;
+  let quizStreak = 0;
+  let currentQuizWord = "";
+  let currentCorrectDef = "";
 
-  // Load history from localStorage
+  const wordList = [
+    "serendipity", "ephemeral", "eloquent", "ubiquitous", "pragmatic",
+    "melancholy", "idyllic", "cacophony", "benevolent", "nostalgia",
+    "ambiguous", "diligent", "esoteric", "obfuscate", "perspicacious",
+    "sanguine", "taciturn", "meticulous", "sonorous",
+    "pellucid", "obsequious", "inscrutable", "petulant", "salacious",
+    "quixotic", "verbose", "pristine", "felicitous",
+    "gregarious", "ostentatious", "perfunctory", "sagacious", "temerity",
+    "zealous", "aggregate", "digress", "ebullient", "frivolous",
+    "garrulous", "harbinger", "ignominious", "judicious", "lackadaisical", 
+    "magnanimous", "nebulous", "obdurate", "parsimonious",
+    "quandary", "recalcitrant", "transient", "unctuous",
+    "vacuous", "winsome", "xenophobic", "yearn", "zephyr"
+  ];
+
+  // Extended Quiz Mock definitions for the core list words (so Quiz works seamlessly offline)
+  const extendedQuizDefs = {
+    "serendipity": "finding valuable things by luck or unexpected good fortune",
+    "ephemeral": "lasting for a very short time",
+    "eloquent": "fluent or persuasive in speaking or writing",
+    "ubiquitous": "present, appearing, or found everywhere",
+    "pragmatic": "dealing with things sensibly and realistically",
+    "melancholy": "a feeling of pensive sadness, typically with no obvious cause",
+    "idyllic": "extremely peaceful, picturesque, or happy",
+    "cacophony": "a harsh, discordant mixture of sounds",
+    "benevolent": "well-meaning and kindly",
+    "nostalgia": "a sentimental longing or wistful affection for the past",
+    "ambiguous": "open to more than one interpretation; unclear",
+    "diligent": "showing care and conscientiousness in one's work",
+    "esoteric": "intended for or likely to be understood by only a small number of people",
+    "obfuscate": "to render obscure, unclear, or unintelligible",
+    "perspicacious": "having a ready insight into and understanding of things",
+    "sanguine": "optimistic or positive, especially in an apparently bad situation",
+    "taciturn": "reserved or uncommunicative in speech; saying little",
+    "meticulous": "showing great attention to detail; very careful and precise",
+    "sonorous": "capably producing a deep or ringing sound",
+    "quixotic": "exceedingly idealistic, unrealistic, and impractical",
+    "verbose": "using or expressed in more words than are needed",
+    "pristine": "in its original condition; unspoiled",
+    "zealous": "having or showing great zeal and enthusiasm"
+  };
+
+  // Tab switching logic
+  document.getElementById("exploreTab").addEventListener("click", () => {
+    document.getElementById("exploreTab").classList.add("active");
+    document.getElementById("quizTab").classList.remove("active");
+    document.getElementById("exploreContainer").style.display = "block";
+    document.getElementById("quizContainer").style.display = "none";
+  });
+
+  document.getElementById("quizTab").addEventListener("click", () => {
+    document.getElementById("quizTab").classList.add("active");
+    document.getElementById("exploreTab").classList.remove("active");
+    document.getElementById("quizContainer").style.display = "block";
+    document.getElementById("exploreContainer").style.display = "none";
+    initQuiz();
+  });
+
   function loadHistory() {
     const saved = localStorage.getItem('wordHistory');
     wordHistory = saved ? JSON.parse(saved) : [];
     renderHistory();
   }
 
-  // Render history list with proper event delegation
   function renderHistory() {
     const historyList = document.getElementById('historyList');
     if (wordHistory.length === 0) {
@@ -525,7 +678,7 @@
       return;
     }
 
-    historyList.innerHTML = ''; // Clear safely
+    historyList.innerHTML = ''; 
 
     wordHistory.forEach((item, idx) => {
       const historyItem = document.createElement('div');
@@ -535,7 +688,7 @@
       const wordInfo = document.createElement('div');
       const wordName = document.createElement('div');
       wordName.className = 'history-word';
-      wordName.textContent = item.word; // Safe: textContent not innerHTML
+      wordName.textContent = item.word; 
 
       const wordTime = document.createElement('div');
       wordTime.className = 'history-time';
@@ -554,23 +707,25 @@
 
       historyList.appendChild(historyItem);
     });
-
-    // Add event delegation for history items
-    historyList.addEventListener('click', (e) => {
-      const removeBtn = e.target.closest('.history-remove');
-      if (removeBtn) {
-        const idx = parseInt(removeBtn.dataset.removeIdx);
-        removeFromHistory(idx);
-        return;
-      }
-
-      const historyItem = e.target.closest('.history-item');
-      if (historyItem) {
-        const idx = parseInt(historyItem.dataset.wordIdx);
-        loadWord(wordHistory[idx].word);
-      }
-    });
   }
+
+  // Event delegation for history items
+  document.getElementById('historyList').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.history-remove');
+    if (removeBtn) {
+      const idx = parseInt(removeBtn.dataset.removeIdx);
+      removeFromHistory(idx);
+      return;
+    }
+
+    const historyItem = e.target.closest('.history-item');
+    if (historyItem) {
+      const idx = parseInt(historyItem.dataset.wordIdx);
+      // Automatically switch to Explore mode when picking from history
+      document.getElementById("exploreTab").click();
+      loadWord(wordHistory[idx].word);
+    }
+  });
 
   function saveWord() {
     if (!currentWord) {
@@ -589,7 +744,6 @@
       timestamp: Date.now()
     });
 
-    // Keep only last 50 words
     if (wordHistory.length > 50) {
       wordHistory = wordHistory.slice(0, 50);
     }
@@ -599,27 +753,17 @@
     showSaveStatus('Saved to history! 📚', 'success', 2000);
   }
 
-  // Show loading state
-  function showLoading() {
-    document.getElementById("word").textContent = "Loading...";
-    document.getElementById("sentence").textContent = "";
-    document.getElementById("definition").textContent = "";
-  }
-
-  // Disable buttons during loading
   function setLoadingState(isLoading) {
     document.getElementById("generateBtn").disabled = isLoading;
     document.getElementById("saveBtn").disabled = isLoading;
   }
 
-  // Remove from history
   function removeFromHistory(idx) {
     wordHistory.splice(idx, 1);
     localStorage.setItem('wordHistory', JSON.stringify(wordHistory));
     renderHistory();
   }
 
-  // Clear all history
   function clearHistory() {
     if (confirm('Clear all saved words?')) {
       wordHistory = [];
@@ -628,7 +772,6 @@
     }
   }
 
-  // Show save status message
   function showSaveStatus(message, type = 'success', duration = 2000) {
     const el = document.getElementById('saveStatus');
     el.textContent = message;
@@ -639,18 +782,8 @@
     }, duration);
   }
 
-  // Safe HTML creation helper - avoids innerHTML injection risks
-  function createSafeElement(tagName, content, className = '') {
-    const el = document.createElement(tagName);
-    el.textContent = content;
-    if (className) el.className = className;
-    return el;
-  }
-
-  // Build definition HTML safely without innerHTML
   function buildDefinitionHTML(meanings) {
     const container = document.createElement('div');
-    
     meanings.forEach(m => {
       const header = document.createElement('h3');
       header.textContent = m.partOfSpeech;
@@ -658,26 +791,21 @@
 
       m.definitions.slice(0, 2).forEach(d => {
         const p = document.createElement('p');
-        // Use linkifyElement instead of innerHTML
         p.appendChild(linkifyElement(d.definition));
         container.appendChild(p);
       });
     });
-
     return container;
   }
 
-  // Create paragraph with safe linkification
   function linkifyElement(text) {
     const fragment = document.createDocumentFragment();
     const parts = text.split(/\b([A-Za-z-]+)\b/);
 
     parts.forEach((part, idx) => {
       if (idx % 2 === 0) {
-        // Regular text
         fragment.appendChild(document.createTextNode(part));
       } else {
-        // Potential word link
         const lowerPart = part.toLowerCase();
         if (commonWords.has(lowerPart)) {
           fragment.appendChild(document.createTextNode(part));
@@ -695,7 +823,6 @@
     return fragment;
   }
 
-  // Format timestamp
   function formatTime(timestamp) {
     const now = Date.now();
     const diff = now - timestamp;
@@ -711,6 +838,98 @@
     return new Date(timestamp).toLocaleDateString();
   }
 
+  // --- QUIZ ENGINE LOGIC ---
+  function initQuiz() {
+    document.getElementById("nextQuizBtn").style.display = "none";
+    document.getElementById("quizFeedback").textContent = "";
+    
+    // Pick active word pool
+    let activeQuizPool = Object.keys(extendedQuizDefs);
+    
+    // Supplement pool with offline dictionary words if they are downloaded
+    const savedDict = localStorage.getItem('offlineDict');
+    if (savedDict) {
+      activeQuizPool = activeQuizPool.concat(Object.keys(JSON.parse(savedDict)));
+    }
+
+    currentQuizWord = activeQuizPool[Math.floor(Math.random() * activeQuizPool.length)];
+    document.getElementById("quizWord").textContent = currentQuizWord;
+
+    // Get correct definition
+    if (extendedQuizDefs[currentQuizWord]) {
+      currentCorrectDef = extendedQuizDefs[currentQuizWord];
+    } else {
+      const saved = JSON.parse(savedDict);
+      currentCorrectDef = saved[currentQuizWord].defs[0];
+    }
+
+    // Build a pool of false answers
+    let falsePool = [
+      "to accidentally release high-altitude weather metrics",
+      "completely lacking standard emotional qualities or warmth",
+      "relating to early sub-surface mapping protocols",
+      "tending to stay close to domestic environments",
+      "a state of hyperactive structural balance",
+      "the process of turning liquid elements to vapor swiftly"
+    ];
+    
+    // Add real definitions as false alternatives to make it challenging
+    Object.values(extendedQuizDefs).forEach(d => { if(d !== currentCorrectDef) falsePool.push(d); });
+
+    // Pick 3 random false items
+    let options = [];
+    while(options.length < 3) {
+      let randDef = falsePool[Math.floor(Math.random() * falsePool.length)];
+      if(randDef !== currentCorrectDef && !options.includes(randDef)) {
+        options.push(randDef);
+      }
+    }
+    options.push(currentCorrectDef);
+    
+    // Shuffle options
+    options.sort(() => Math.random() - 0.5);
+
+    // Render options
+    const optionsDiv = document.getElementById("quizOptions");
+    optionsDiv.innerHTML = "";
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.className = "option-btn";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => handleQuizAnswer(btn, opt === currentCorrectDef));
+      optionsDiv.appendChild(btn);
+    });
+  }
+
+  function handleQuizAnswer(selectedBtn, isCorrect) {
+    const allButtons = document.querySelectorAll(".option-btn");
+    allButtons.forEach(btn => {
+      btn.disabled = true;
+      if (btn.textContent === currentCorrectDef) {
+        btn.classList.add("correct");
+      }
+    });
+
+    const feedbackEl = document.getElementById("quizFeedback");
+    if (isCorrect) {
+      quizScore += 10;
+      quizStreak++;
+      feedbackEl.textContent = "🎉 Correct! +10 Points";
+      feedbackEl.style.color = "#28a745";
+    } else {
+      selectedBtn.classList.add("incorrect");
+      quizStreak = 0;
+      feedbackEl.textContent = "❌ Incorrect. Try the next one!";
+      feedbackEl.style.color = "#dc3545";
+    }
+
+    document.getElementById("quizScore").textContent = quizScore;
+    document.getElementById("quizStreak").textContent = quizStreak;
+    document.getElementById("nextQuizBtn").style.display = "block";
+  }
+
+  document.getElementById("nextQuizBtn").addEventListener("click", initQuiz);
+
   // Initialize event listeners
   document.getElementById("generateBtn").addEventListener("click", loadRandom);
   document.getElementById("speakBtn").addEventListener("click", speak);
@@ -721,51 +940,14 @@
   document.getElementById("saveSettingsBtn").addEventListener("click", saveSettings);
   document.getElementById("downloadDictBtn").addEventListener("click", downloadDictionary);
 
-  // Load URL parameter if present
   const params = new URLSearchParams(window.location.search);
   const urlWord = params.get("word");
   if (urlWord) {
-    loadWord(urlWord); // No decodeURIComponent here, loadWord handles it
+    loadWord(urlWord);
   }
 
   loadHistory();
   loadSettings();
-
-  // Handle offline/online events
-  window.addEventListener('offline', () => {
-    document.getElementById("offlineIndicator").classList.add("show");
-    document.body.classList.add("offline-mode");
-  });
-
-  window.addEventListener('online', () => {
-    document.getElementById("offlineIndicator").classList.remove("show");
-    document.body.classList.remove("offline-mode");
-  });
-
-  // Check initial online status
-  if (!isOnline()) {
-    document.getElementById("offlineIndicator").classList.add("show");
-    document.body.classList.add("offline-mode");
-  }
-
-  // Built-in word list (no API needed, no CORS issues) - deduplicated
-  const wordList = [
-    "serendipity", "ephemeral", "eloquent", "ubiquitous", "pragmatic",
-    "melancholy", "idyllic", "cacophony", "benevolent", "nostalgia",
-    "ambiguous", "diligent", "esoteric", "obfuscate", "perspicacious",
-    "sanguine", "taciturn", "meticulous", "sonorous",
-    "pellucid", "obsequious", "inscrutable", "petulant", "salacious",
-    "quixotic", "verbose", "pristine", "felicitous",
-    "gregarious", "ostentatious", "perfunctory", "sagacious", "temerity",
-    "zealous", "aggregate", "digress", "ebullient", "frivolous",
-    "garrulous", "harbinger", "ignominious", "judicious", "kiss",
-    "lackadaisical", "magnanimous", "nebulous", "obdurate", "parsimonious",
-    "quandary", "recalcitrant", "transient", "unctuous",
-    "vacuous", "winsome", "xenophobic", "yearn", "zephyr"
-  ];
-
-  // Pre-compute Set for O(1) lookup in linkify
-  const wordListSet = new Set(wordList.map(w => w.toLowerCase()));
 
   async function loadRandom() {
     document.getElementById("word").textContent = "Loading...";
@@ -773,7 +955,6 @@
     document.getElementById("definition").textContent = "";
 
     try {
-      // Pick a random word from the built-in list
       const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
       loadWord(randomWord);
     } catch (e) {
@@ -781,13 +962,11 @@
     }
   }
 
-  // Event delegation for word links in definition
   document.addEventListener('click', (e) => {
     const wordLink = e.target.closest('.word-link');
     if (wordLink) {
       e.preventDefault();
-      const word = wordLink.dataset.word;
-      loadWord(word);
+      loadWord(wordLink.dataset.word);
     }
   });
 
@@ -812,16 +991,15 @@
 
   function goBack() {
     if (navigationStack.length > 1) {
-      navigationStack.pop(); // Remove current word
+      navigationStack.pop(); 
       const previousWord = navigationStack[navigationStack.length - 1];
-      loadWord(previousWord, true); // true = don't add to stack again
+      loadWord(previousWord, true); 
       updateBackButton();
     }
   }
 
   function updateBackButton() {
     const backBtn = document.getElementById("backBtn");
-    // Show back button only if there's a history to go back to
     backBtn.style.display = navigationStack.length > 1 ? "inline-block" : "none";
   }
 
@@ -853,12 +1031,9 @@
 
     localStorage.setItem('ollama_url', url);
     localStorage.setItem('ollama_model', model);
-
-    // Reload global vars
     window.location.reload();
   }
 
-  // Download and cache offline dictionary to localStorage
   async function downloadDictionary() {
     const btn = document.getElementById("downloadDictBtn");
     const status = document.getElementById("dictStatus");
@@ -868,7 +1043,6 @@
     status.textContent = "Downloading 1000 words...";
 
     try {
-      // Store the offline dictionary
       localStorage.setItem('offlineDict', JSON.stringify(offlineDictionary));
       localStorage.setItem('offlineDictVersion', '1.0');
       
@@ -886,7 +1060,6 @@
     }
   }
 
-  // Check if offline dictionary is available
   function updateDictStatus() {
     const status = document.getElementById("dictStatus");
     const savedDict = localStorage.getItem('offlineDict');
@@ -901,12 +1074,10 @@
     }
   }
 
-  // Check if we're online
   function isOnline() {
     return navigator.onLine;
   }
 
-  // Get definition from offline dictionary
   function getOfflineDefinition(word) {
     const savedDict = localStorage.getItem('offlineDict');
     if (!savedDict) return null;
@@ -916,13 +1087,11 @@
   }
 
   async function loadWord(word, skipStack = false) {
-    // Normalize word: decode if it's encoded, then lowercase
     if (typeof word === 'string' && word.includes('%')) {
       word = decodeURIComponent(word);
     }
     word = word.toLowerCase().trim();
 
-    // Validate word
     if (!word) {
       showError("Invalid word");
       return;
@@ -930,12 +1099,10 @@
 
     currentWord = word;
 
-    // Add to navigation stack if it's a new navigation (avoid duplicates)
     if (!skipStack) {
       const lastWord = navigationStack[navigationStack.length - 1];
       if (lastWord !== word) {
         navigationStack.push(word);
-        // Limit stack to prevent memory issues
         if (navigationStack.length > 50) {
           navigationStack.shift();
         }
@@ -949,22 +1116,17 @@
     document.getElementById("saveStatus").textContent = "";
     setLoadingState(true);
 
-    // Fetch sentence from Ollama with caching and timeout
     if (cache.sentences.has(word)) {
       document.getElementById("sentence").innerHTML = cache.sentences.get(word);
     } else {
       try {
         document.getElementById("sentence").textContent = "Connecting to Ollama…";
-        
-        // Create abort controller for timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         const ollamaResponse = await fetch(`${OLLAMA_URL}/api/generate`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model: OLLAMA_MODEL,
             prompt: `Create ONE natural, interesting example sentence using the word "${word}". The sentence should be realistic and engaging. Return ONLY the sentence, nothing else.`,
@@ -978,20 +1140,16 @@
         if (ollamaResponse.ok) {
           const data = await ollamaResponse.json();
           let sentence = data.response.trim();
-          
-          // Safely bold the defined word using DOM manipulation
           const sentenceEl = document.getElementById("sentence");
-          sentenceEl.textContent = ''; // Clear safely
+          sentenceEl.textContent = ''; 
           
           const parts = sentence.split(new RegExp(`\\b(${word})\\b`, 'gi'));
           parts.forEach((part, idx) => {
             if (idx % 2 === 1) {
-              // This is the word match
               const strong = document.createElement('strong');
               strong.textContent = part;
               sentenceEl.appendChild(strong);
             } else {
-              // Regular text
               sentenceEl.appendChild(document.createTextNode(part));
             }
           });
@@ -1009,15 +1167,13 @@
       }
     }
 
-    // Fetch definition: try cache → offline → API
     if (cache.definitions.has(word)) {
       document.getElementById("definition").innerHTML = cache.definitions.get(word);
     } else {
-      // Try offline dictionary first
       const offlineDef = getOfflineDefinition(word);
       if (offlineDef) {
         const defEl = document.getElementById("definition");
-        defEl.textContent = ''; // Clear
+        defEl.textContent = ''; 
         
         const header = document.createElement('h3');
         header.textContent = offlineDef.pos;
@@ -1031,48 +1187,53 @@
         
         cache.definitions.set(word, defEl.innerHTML);
       } else if (isOnline()) {
-        // Fall back to API if online
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 8000);
-          
-          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`, {
-            signal: controller.signal
-          });
-          
+          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`, { signal: controller.signal });
           clearTimeout(timeoutId);
           
           if (!res.ok) {
             document.getElementById("definition").textContent = "Definition unavailable offline.";
+            setLoadingState(false);
             return;
           }
           
           const data = await res.json();
-
           if (!Array.isArray(data) || data.length === 0) {
             document.getElementById("definition").textContent = "No definition found.";
+            setLoadingState(false);
             return;
           }
 
           const meanings = data[0].meanings;
           const defContainer = buildDefinitionHTML(meanings);
-          
           const cachedHTML = defContainer.innerHTML;
           cache.definitions.set(word, cachedHTML);
           document.getElementById("definition").innerHTML = cachedHTML;
         } catch (e) {
-          if (e.name === 'AbortError') {
-            document.getElementById("definition").textContent = "Definition request timed out. Try again.";
-          } else {
-            document.getElementById("definition").textContent = "Definition unavailable offline.";
-          }
+          document.getElementById("definition").textContent = e.name === 'AbortError' ? "Definition request timed out." : "Definition unavailable offline.";
         }
       } else {
         document.getElementById("definition").textContent = "📴 Offline mode: Word not in downloaded dictionary.";
       }
     }
+    setLoadingState(false);
+  }
 
-    setLoadingState(false); // Re-enable buttons after loading
+  window.addEventListener('offline', () => {
+    document.getElementById("offlineIndicator").classList.add("show");
+    document.body.classList.add("offline-mode");
+  });
+
+  window.addEventListener('online', () => {
+    document.getElementById("offlineIndicator").classList.remove("show");
+    document.body.classList.remove("offline-mode");
+  });
+
+  if (!isOnline()) {
+    document.getElementById("offlineIndicator").classList.add("show");
+    document.body.classList.add("offline-mode");
   }
 </script>
 
